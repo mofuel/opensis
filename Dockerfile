@@ -25,9 +25,6 @@ RUN echo "memory_limit = 256M" > /usr/local/etc/php/conf.d/memory.ini \
 # Habilitar mod_rewrite de Apache
 RUN a2enmod rewrite
 
-# Configurar DocumentRoot
-RUN sed -i 's!/var/www/html!/var/www/html!g' /etc/apache2/sites-available/000-default.conf
-
 # Copiar archivos de openSIS
 COPY . /var/www/html/
 
@@ -37,8 +34,20 @@ RUN chmod -R 755 /var/www/html \
     && chmod -R 777 /var/www/html/modules 2>/dev/null || true \
     && chown -R www-data:www-data /var/www/html
 
-# Exponer puerto
-EXPOSE 80
+# Configurar Apache para escuchar en el puerto de Railway
+RUN sed -i 's/80/${PORT}/g' /etc/apache2/sites-available/000-default.conf /etc/apache2/ports.conf
 
-# Iniciar Apache
-CMD ["apache2-foreground"]
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=40s \
+    CMD curl -f http://localhost:${PORT}/ || exit 1
+
+# Exponer el puerto que Railway asigna dinámicamente
+EXPOSE ${PORT}
+
+# Script de inicio personalizado
+RUN echo '#!/bin/bash\n\
+sed -i "s/Listen 80/Listen ${PORT}/g" /etc/apache2/ports.conf\n\
+sed -i "s/:80/:${PORT}/g" /etc/apache2/sites-available/000-default.conf\n\
+apache2-foreground' > /start.sh && chmod +x /start.sh
+
+CMD ["/start.sh"]
